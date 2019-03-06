@@ -98,13 +98,13 @@ Accel_t accel = {-1, -1, -1};
 
 // Pin definitions
 // These can be changed, 2 and 3 are the Arduinos ext int pins
-int intPin = 12;
-
-// Set up pin 13 led for toggling  
-int myLed  = 13;
+//int intPin = 12;
 
 #define I2Cclock 400000
 #define I2Cport Wire
+
+// Pin definitions
+int intPin = 2;  // These can be changed, 2 and 3 are the Arduinos ext int pins
 
 // Use either this line or the next to select which I2C address your device is using
 #define MPU9250_ADDRESS MPU9250_ADDRESS_AD0   
@@ -303,7 +303,9 @@ void logDataToConsole() {
   Serial.print("altitude: ");
   Serial.print(gps.alt);
   Serial.print("\t speed: ");
-  Serial.println(gps.speed__kmph);
+  Serial.print(gps.speed__kmph);
+  Serial.print("\t check: ");
+  Serial.println(gps.checksum);
 
 }
 
@@ -471,6 +473,7 @@ void updateAccelData() {
   // If intPin goes high, all data registers have new data
   // On interrupt, check if data ready interrupt
   if (myIMU.readByte(MPU9250_ADDRESS, INT_STATUS) & 0x01) {
+    Serial.print("[ALT] Getting new data");
     
     myIMU.readAccelData(myIMU.accelCount);  // Read the x/y/z adc values
   
@@ -563,7 +566,6 @@ void updateAccelData() {
       }
   
       myIMU.count = millis();
-      digitalWrite(myLed, !digitalRead(myLed));  // toggle led
     } // if (myIMU.delt_t > 500)
   } // if (!AHRS)
   else {
@@ -686,7 +688,7 @@ void updateAltimiterData() {
  * Updates sensor data 
  */
 void updateSensorData() {
-//  updateAccelData();
+  updateAccelData();
   updateAltimiterData();
   updateGPSData();
 }
@@ -701,8 +703,6 @@ void setupIMU() {
   // Set up the interrupt pin, its set as active high, push-pull
   pinMode(intPin, INPUT);
   digitalWrite(intPin, LOW);
-  pinMode(myLed, OUTPUT);
-  digitalWrite(myLed, HIGH);
 
   // Read the WHO_AM_I register, this is a good test of communication
   byte c = myIMU.readByte(MPU9250_ADDRESS, WHO_AM_I_MPU9250);
