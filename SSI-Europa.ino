@@ -1,20 +1,18 @@
 /*
- * This code was used on a Teensy sent to 30km.
+ * This code was used for SSI's Project Europa mission.
  * The code monitors data from various sensors and records it to an SD card.
  * 
- * Edward Vendrow, Hale Konopka
- * Team Grass
+ * Edward Vendrow, Paxton Scott
+ * Project Europa
  */
 
 #include <SPI.h>
-
-#include "SdFat.h" //SD card
-
-#include "quaternionFilters.h" //for accelerometer
-#include "MPU9250.h" //acceleromter
-
-#include <Wire.h> //altimiter
-#include "SparkFunMPL3115A2.h" //altimiter
+#include "SdFat.h"              
+#include "quaternionFilters.h"  //for accelerometer
+#include "MPU9250.h"            //acceleromter
+#include <Wire.h>               //altimiter
+#include "SparkFunMPL3115A2.h"  //altimiter
+#include <Adafruit_BMP280.h>    //temp/pressure (BMP280)
 
 #include <SoftwareSerial.h>
 #include <TinyGPS.h>
@@ -23,9 +21,7 @@
 
 #define SerialDebug true  // Set to true to get Serial output for debugging
 
-#define SAMPLERATE_DELAY_MS (5000)
-#define TRANSMISSION_DELAY_MS (5*60*1000)
-#define CUTDOWN_DELAY_MS (2*60*1000)
+#define SAMPLERATE_DELAY_MS (1000)
 
 int NICHROME_PIN = 5;
 int nichromeCounter = 0;
@@ -54,10 +50,17 @@ typedef struct {
 } Alt_t;
 
 typedef struct {
+  double temp;
+  double pressure;
+  double alt;
+} BMP_t;
+
+typedef struct {
   double x;
   double y;
   double z;
 } Accel_t;
+
 
 //-------------------------------------- Define global sensor variables
  
@@ -65,6 +68,7 @@ Thermo_t thermo = {-1};
 GPS_t gps = {-1, -1};
 Alt_t altimiter = {-1, -1, -1};
 Accel_t accel = {-1, -1, -1};
+BMP_t bmp = {-1, -1, -1};
 
 
 //--------------------------------------
@@ -81,14 +85,14 @@ Accel_t accel = {-1, -1, -1};
 
 //--------------------------------------
 //Create temp/pressure sensor with software SPI
-//#define BMP_SCK 14
-//#define BMP_MISO 7
-//#define BMP_MOSI 6
-//#define BMP_CS 8
-//
-////Adafruit_BMP280 bmp; // I2C
-////Adafruit_BMP280 bmp(BMP_CS); // hardware SPI
-//Adafruit_BMP280 bmpChip(BMP_CS, BMP_MOSI, BMP_MISO,  BMP_SCK);
+#define BMP_SCK   13
+#define BMP_MISO  12
+#define BMP_MOSI  11
+#define BMP_CS    8
+
+//Adafruit_BMP280 bmp; // I2C
+//Adafruit_BMP280 bmp(BMP_CS); // hardware SPI
+Adafruit_BMP280 bmpChip(BMP_CS, BMP_MOSI, BMP_MISO,  BMP_SCK);
 //--------------------------------------
 
 //-------------------------------------- Initialize Accelerometer
@@ -186,7 +190,12 @@ void setup()
   //If SD fails to initialize, crash :(
   if (!initializeSd()) { return; }
 
-  setupAltimiter();
+  //Try to initialize BMP
+  if (!bmpChip.begin()) {  
+    Serial.println("Could not find a valid BMP280 sensor, check wiring!");
+  }
+
+//  setupAltimiter();
   setupIMU();
 
   //Begin software serial for GPS
@@ -219,12 +228,6 @@ void setupAltimiter() {
 
 void loop() {
 
-  innerLoop();
-
-  delay(1000);
-}
-
-void innerLoop() {
   updateSensorData();
 
   if (SerialDebug) {
@@ -235,9 +238,7 @@ void innerLoop() {
   // We use smartdelay() instead of delay() because we need to constantly
   // update the GPS library with info from the serial ports
   smartdelay(SAMPLERATE_DELAY_MS);
-
-  // OLD: Since data collection and logging take time, the
-  // OLD: actual sample rate will be higher
+  delay(1000);
 }
 
 /*
@@ -265,17 +266,30 @@ void logDataToConsole() {
   Serial.println(thermoLog);
   
   //Log bmp data
-  Serial.print("[ALT] Temperature = ");
-  Serial.print(altimiter.temp);
+  Serial.print("[BMP280] Temperature = ");
+  Serial.print(bmp.temp);
   Serial.println(" *C");
 
-  Serial.print("[ALT] Pressure = ");
-  Serial.print(altimiter.pressure);
+  Serial.print("[BMP280] Pressure = ");
+  Serial.print(bmp.pressure);
   Serial.println(" Pa");
 
-  Serial.print("[ALT] Approx altitude = ");
-  Serial.print(altimiter.alt); // this should be adjusted to your local forcase
+  Serial.print("[BMP280] Approx altitude = ");
+  Serial.print(bmp.alt); // this should be adjusted to your local forcase
   Serial.println(" m");
+//  Serial.print("[ALT] Temperature = ");
+//  Serial.print(altimiter.temp);
+//  Serial.println(" *C");
+//
+//  Serial.print("[ALT] Pressure = ");
+//  Serial.print(altimiter.pressure);
+//  Serial.println(" Pa");
+//
+//  Serial.print("[ALT] Approx altitude = ");
+//  Serial.print(altimiter.alt); // this should be adjusted to your local forcase
+//  Serial.println(" m");
+
+
 
   //Log accelerometer data
   Serial.print("[ACCEL] ");
@@ -457,6 +471,16 @@ void updateGPSData() {
 //  print_int(failed, 0xFFFFFFFF, 10);
   Serial.println();
   
+}
+
+/*
+ * Update BMP data structure with current reading
+ * Make sure readAltitude() is populated with correct value
+ */
+void updateBMPData() {
+  bmp.temp = bmpChip.readTemperature();
+  bmp.pressure = bmpChip.readPressure();
+  bmp.alt = bmpChip.readAltitude(1013.25); // this should be adjusted to your local forcase
 }
 
 /*
@@ -689,7 +713,8 @@ void updateAltimiterData() {
  */
 void updateSensorData() {
   updateAccelData();
-  updateAltimiterData();
+//  updateAltimiterData();
+  updateBMPData();
   updateGPSData();
 }
 
